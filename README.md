@@ -363,7 +363,7 @@ The governor is a **3-state machine** controlling the boiler:
 | **ACTIVE** | On | Fires until load drops below stop threshold (3,000 BTU/hr) with minimum run (10 min) and grace period (2 min) |
 | **LOCKOUT** | Off | Mandatory rest (15 min minimum). Can re-enter ACTIVE early if load sustains above start threshold for 30 continuous seconds |
 
-**Hysteresis band**: Start at 5k BTU, stop at 3k BTU. The 2k gap prevents the boiler from flickering at boundary loads.
+**Hysteresis band**: Start at 5k BTU, stop at 3k BTU. The 2k gap prevents the boiler from flickering at boundary loads. This relatively low minimum structural load is specifically viable because the boiler is configured with a **15°F CH (Central Heating) Differential**. By allowing the circulating return water to cool significantly before reigniting the burner, the boiler extracts maximum BTUs from the loop and stretches out its firing cycles, preventing short-cycling even when the aggregate zone load is sitting far below the boiler's physical minimum fire rate (~32,000 BTU/hr).
 
 **Lockout re-entry debounce**: 30-second sustained load requirement prevents valve-cycling-induced load oscillation from flipping the boiler on and off.
 
