@@ -384,7 +384,7 @@ Five air handlers serve dual purposes: **temperature equalization** (shuttling h
 #### Temperature Shuttling (Override Mode)
 When one zone in a group is significantly warmer than another, the fan runs to shuttle heat from the warm zone to the cold zone through the shared ductwork. This is especially valuable for capturing **free solar heat** — for example, the Living room has large east and south-facing windows. On a sunny winter morning, the sun hits those windows, and the room naturally climbs to ~70°F. Meanwhile, the adjacent Guest Suite is located mostly below grade, receiving almost zero solar heat, and is sitting at 66.5–67.0°F actively calling for boiler heat. 
 
-The fan continuously monitors the sensors, and anytime it detects that the temperature spread between these two zones exceeds **3.0°F**, it kicks on. The ductwork redistributes that excess solar energy from the Living room directly into the Guest Suite, reducing or eliminating the Guest Suite's need for boiler heat entirely. The winter sun is effectively heating a basement room.
+The fan continuously monitors the sensors, and anytime it detects that the temperature spread between these two zones exceeds **3.0°F**, it kicks on. The ductwork redistributes that excess solar energy from the Living room directly into the Guest Suite, reducing or eliminating the Guest Suite's need for boiler heat entirely. The winter sun is effectively heating the Guest Suite.
 
 **Trigger:** Temperature spread across all zone sensors in the group (including the FA duct sensor) exceeds **3.0°F**, with a guard that `MinTemp < 90°F` to filter out sensor failures.
 
