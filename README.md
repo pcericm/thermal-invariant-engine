@@ -31,8 +31,7 @@ Every design decision defaults to safety. If Node-RED goes offline, weather data
 
 A stock Ecobee installation — 13 independent thermostats each calling for heat on their own schedule — *works*, but it creates significant problems for a multi-zone hydronic system:
 
-**Load coalescing.** Independent thermostats have no awareness of each other. All 13 zones might call for heat simultaneously after a setback recovery, slamming the boiler with 130,000+ BTU/hr of demand and creating pressure drops across the manifold. The Invariant Engine's Governor coordinates firing — it starts the boiler only when aggregate demand justifies it, manages minimum run/rest times, and prevents zones from freelancing during rest periods. The system fires longer, gentler cycles instead of chaotic bursts.
-
+**Load coalescing.** Independent thermostats have no awareness of each other. If 13 independent zones all fire a few minutes apart from each other, a high-efficiency condensing boiler is forced to "short-cycle"—turning on, running for 5 minutes for a single small bathroom, and shutting down. This destroys efficiency and boiler lifespan. The Invariant Engine's Governor actively *coalesces* demand. It waits until enough aggregate load exists (e.g., waiting for that bathroom *and* a bedroom to need heat), and then synchronizes their valve openings. By doing this, the boiler fires less often, but runs for longer, steadier intervals in its peak condensing efficiency zone. The system enforces minimum run times and prevents specific zones from "freelancing" with small demands during boiler rest periods.
 **Gentler heat delivery.** Ecobees use simple bang-bang control (on/off at a fixed deadband). For radiant floors, this produces temperature swings — the slab overshoots because the wax valve was open too long, then undershoots because it was off too long. The PLC's velocity-form PID with 30–60 minute slow PWM delivers proportional heat: a zone that needs a little heat gets a 20% duty cycle (12 minutes on, 48 minutes off), not a full blast followed by nothing. This produces dramatically more even floor surface temperatures.
 
 **Weather-responsive supply temperature.** The boiler runs a custom outdoor reset (ODR) curve that varies supply water temperature from 85°F to 120°F based on outdoor conditions. This is great for efficiency, but it breaks Ecobee's learning algorithms — the thermostat tries to learn "how long should I run to raise the room 1°F," but the answer changes constantly because the supply water temperature changes with the weather. On a 40°F day the water is 95°F and it takes 45 minutes; on a 5°F day the water is 118°F and it takes 20 minutes. The Ecobee can never converge on a stable model, leading to erratic run times, overshoot, and undershoot. The PLC's PID controller doesn't need to learn — it directly measures the error and computes proportional output every scan, adapting instantly to whatever supply temperature the ODR curve is delivering.
@@ -165,7 +164,7 @@ The boiler's target supply water temperature is calculated from outdoor temperat
 
 The slope is **−0.5385°F supply per °F outdoor** (35°F supply range over 65°F outdoor range).
 
-**Fail-safe:** If outdoor temperature reads 0°F (Modbus default when offline), the system delivers maximum heat (120°F). The house cannot freeze due to a communication failure.
+
 
 ### 2. Solar Brake — Preemptive Load Reduction
 
@@ -250,6 +249,31 @@ The velocity-form PID's built-in natural deceleration (shrinking ΔY as error sh
 | Tv (derivative time) | 0.0 | 0.0 | seconds (disabled) |
 
 Note: `GVL_Config.fKp` is the proportional *band* in °F. It is converted to gain in PLC_PRG as `1.0 / Kp` so a band of 3.0°F = gain of 0.333.
+
+#### Dynamic Proportional Cap (The "Shoulder Season Droop")
+
+To fundamentally guarantee that the thermal mass of the concrete slabs cannot overheat the room, the `FB_PID` block enforces a geometric cut-off on the maximum allowed duty cycle near the setpoint.
+
+```iecst
+Y := MIN(Y, KP * fError * 1.5);
+```
+
+```mermaid
+xychart-beta
+    title "Dynamic Proportional Cap vs Pure Proportional (3.0F Band)"
+    x-axis "Temperature Error (°F)" [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+    y-axis "Duty Cycle (%)" 0 --> 100
+    line "Pure Proportional (Kp=33.3%)" [0, 16.6, 33.3, 50.0, 66.6, 83.3, 100]
+    line "Dynamic Cap (1.5x Kp)" [0, 24.9, 50.0, 75.0, 100, 100, 100]
+```
+
+*   **The "Pure Proportional" Line (Bottom):** What the Proportional band calls for purely based on error.
+*   **The "Dynamic Cap" Line (Top):** The absolute maximum duty cycle the system is allowed to output ($Kp \times Error \times 1.5$).
+*   **The Gap Between:** This is the *only* space where the Integral (Ti) is allowed to operate.
+
+Notice how the cap physically forces the duty cycle to squeeze down to 0% as it approaches 0.0 on the bottom axis. Even if it is -20°F outside and the slow Integral (Ti=7200s) has spent 8 hours calculating a massive heat "debt," this cap explicitly blocks the boiler from paying that debt as the room nears the setpoint. 
+
+This explicitly manufactures a "Droop" during shoulder seasons—allowing rooms to intentionally sink to 66.5°F overnight rather than holding perfectly flat at 68.0°F. This creates a thermal void in the concrete, ensuring that when the 8:00 AM sun arrives, the solar gain is absorbed harmlessly without causing a sweltering overshoot.
 
 ### 5. Feed-Forward Injection
 
@@ -406,18 +430,18 @@ This ensures that a PLC reboot, power outage, or firmware update does not lose u
 | # | Zone | BTU/hr | PWM Cycle | MinRun | MinOff | Kp (Band) | Ti | Slab Type |
 |---|---|---|---|---|---|---|---|---|
 | 1 | Garage | 57,900 | 60 min | 10 min | 5 min | 3.0°F | 7200s | Concrete |
-| 2 | Mudroom | 2,800 | 45 min | 10 min | 5 min | 3.0°F | 7200s | Concrete |
-| 3 | Gym | 6,200 | 45 min | 10 min | 5 min | 3.0°F | 7200s | Concrete |
+| 2 | Mudroom | 2,800 | 45 min | 10 min | 5 min | 3.0°F | 5400s | Concrete |
+| 3 | Gym | 6,200 | 45 min | 10 min | 5 min | 3.0°F | 5400s | Concrete |
 | 4 | Hearth | 19,000 | 60 min | 10 min | 5 min | 3.0°F | 7200s | Concrete |
 | 5 | Living | 35,800 | 60 min | 10 min | 5 min | 3.0°F | 7200s | Concrete |
 | 6 | Guest | 14,000 | 60 min | 10 min | 5 min | 4.0°F | 7200s | Concrete |
-| 7 | Primary | 18,000 | 60 min | 10 min | 5 min | 3.5°F | 7200s | Gypcrete |
-| 8 | PriBath | 3,700 | 30 min | 5 min | 5 min | 3.0°F | 5400s | Gypcrete |
-| 9 | Bed1 | 5,100 | 30 min | 5 min | 5 min | 3.0°F | 7200s | Gypcrete |
-| 10 | Bed2 | 5,500 | 30 min | 5 min | 5 min | 3.0°F | 7200s | Gypcrete |
+| 7 | Primary | 18,000 | 45 min | 10 min | 5 min | 2.5°F | 5400s | Gypcrete |
+| 8 | PriBath | 3,700 | 30 min | 5 min | 5 min | 2.0°F | 3600s | Gypcrete |
+| 9 | Bed1 | 5,100 | 30 min | 5 min | 5 min | 2.0°F | 3600s | Gypcrete |
+| 10 | Bed2 | 5,500 | 30 min | 5 min | 5 min | 2.0°F | 3600s | Gypcrete |
 | 11 | Sitting | 16,700 | 60 min | 10 min | 5 min | 3.5°F | 7200s | Gypcrete |
-| 12 | Bed3 | 5,300 | 30 min | 5 min | 5 min | 3.0°F | 7200s | Gypcrete |
-| 13 | Office | 9,000 | 30 min | 5 min | 5 min | 3.0°F | 5400s | Gypcrete |
+| 12 | Bed3 | 5,300 | 30 min | 5 min | 5 min | 2.0°F | 3600s | Gypcrete |
+| 13 | Office | 9,000 | 30 min | 5 min | 5 min | 3.0°F | 3600s | Gypcrete |
 
 ---
 
