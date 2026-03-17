@@ -171,7 +171,7 @@ The slope is **−0.5385°F supply per °F outdoor** (35°F supply range over 65
 
 The solar brake is designed to catch the impact of solar gain *before it arrives* without causing comfort issues. Unlike a traditional setback — which cuts the thermostat and turns off the heat entirely, letting the slab go cold — the solar brake **still puts BTUs into the slab**, just at a reduced rate. This keeps the floors warm and comfortable while creating thermal headroom: the slab is slightly below its fully-charged state, so when solar radiation pours through the windows, the thermal mass absorbs that free heat instead of overheating the room. The result is fuel savings without cold floors.
 
-**Primary source:** Node-RED calculates a brake factor (0.1–1.0) using local lux sensors, weather forecasts, precipitation data, and time-of-day logic. This is passed via Modbus as `NR_Brake_Factor`.
+**Primary source:** Node-RED calculates a brake factor (0.4–1.4) using local lux sensors, weather forecasts, precipitation data, and time-of-day logic. This is passed via Modbus as `NR_Brake_Factor`. Values below 1.0 represent solar braking (reducing heat), while values above 1.0 represent pre-charge boosting (proactively adding heat before a forecast cold front). The typical range during solar braking is 0.4–0.8; during pre-charge events the factor reaches 1.2–1.4.
 
 **Fallback:** If Node-RED is offline or data is stale (no sequence counter update in 10 minutes), a built-in step-function provides conservative braking based on outdoor temperature:
 
@@ -190,8 +190,8 @@ A user-configurable maximum brake (`GVL_Persistent.rSolarBrakeMax`, default 0.4 
 
 When the 4-hour temperature forecast predicts a significant drop (≥ 5°F decline, landing below 35°F), the system activates pre-charge mode:
 
-- **+20% boost** added to the load modifier, creating a minimum duty floor across all zones
-- **Solar brake is overridden** to 1.0 (disabled) — don't cut heat when a cold front is incoming
+- **Brake factor pushed above 1.0** (typically 1.2–1.4), creating a load boost that translates into higher duty cycles and a feed-forward minimum duty floor
+- **Solar brake is overridden** — the brake factor cannot remain below 1.0 when a cold front is incoming
 - **Hysteresis release**: pre-charge only deactivates when the forecast eases above −4°F for 2 continuous minutes, preventing flicker from Modbus noise or transient forecast updates
 - **Immediate release**: if the forecast flips positive (≥ −0.1°F), pre-charge drops instantly
 
@@ -222,7 +222,7 @@ A textbook position-form PID controller assumes the plant responds promptly to c
 - **Anti-windup is free.** Output clamping (0% to 100%) IS the anti-windup mechanism. No special integral clamp, no conditional integration, no tracking mode. The integral cannot wind up because ΔY is simply not accumulated when the output is at limits.
 - **Natural deceleration.** As temperature rises toward setpoint, the error shrinks, so ΔY shrinks, so duty naturally drops. No glide path or threshold needed.
 - **Clean lockout recovery.** When a zone is locked out by the governor, the output stays at its last value when the lockout was entered. When released, it resumes from that point — no integral bomb, no overshoot.
-- **Proportional delivery.** The wide proportional band (3.0°F) means the PID ramps duty gradually across a range of error values instead of slamming between 0% and 100%. A room 1.5°F below setpoint gets 50% duty, not 100%. Combined with the slow PWM, this produces genuinely proportional heat delivery.
+- **Proportional delivery.** The wide proportional band (3.2°F for concrete, 2.0–3.5°F for gypcrete) means the PID ramps duty gradually across a range of error values instead of slamming between 0% and 100%. A room 1.5°F below setpoint gets ~47% duty, not 100%. Combined with the slow PWM, this produces genuinely proportional heat delivery.
 
 #### Why Derivative (D) is Disabled
 
@@ -238,18 +238,26 @@ The velocity-form PID's built-in natural deceleration (shrinking ΔY as error sh
 
 **Additional features:**
 - **Cold-start catch-up**: If the output is near zero but error is large (> 0.3°F and Y < 0.08), the integral gets a 3× boost to speed up initial response.
-- **Dynamic proportional cap**: The proportional change per scan is capped at 1.2 × Kp × error, preventing huge duty jumps from sensor noise.
+- **Dynamic proportional cap**: The accumulated output is capped at 1.5 × Kp × error, preventing integral windup from keeping duty disproportionately high as the zone approaches setpoint.
 - **Low-pass derivative filter**: Derivative uses a first-order filter (Tf = TV/5) to smooth out measurement noise (available if Tv is ever enabled for experimentation).
 - **Instant cutoff**: When temperature is at or above setpoint (error ≤ 0), output is forced to exactly 0.0.
 
 **Tuning parameters** (per zone, configured in `GVL_Config`):
 | Parameter | Concrete Zones | Gypcrete Zones | Units |
 |---|---|---|---|
-| Kp (proportional band) | 3.0 | 3.0–3.5 | °F |
-| Ti (integral time) | 7200 | 5400–7200 | seconds |
+| Kp (proportional band) | 3.2 | 2.0–3.5 | °F |
+| Ti (integral time) | 7200 | 3600–7200 | seconds |
 | Tv (derivative time) | 0.0 | 0.0 | seconds (disabled) |
 
-Note: `GVL_Config.fKp` is the proportional *band* in °F. It is converted to gain in PLC_PRG as `1.0 / Kp` so a band of 3.0°F = gain of 0.333.
+Note: `GVL_Config.fKp` is the proportional *band* in °F. It is converted to gain in PLC_PRG as `1.0 / Kp` so a band of 3.2°F = gain of 0.3125.
+
+**Per-zone weather parameters** (configured in `GVL_Config`):
+| Parameter | Description | Range |
+|---|---|---|
+| fPreChargeFactor | Scales the global pre-charge feed-forward for this zone. 1.0 = full boost. 0.0 = no pre-charge. | 0.0–1.0 |
+| fSolarSensitivity | Scales the solar brake for this zone. 1.0 = full brake (direct sun zones). 0.0 = ignore brake (no sun exposure). | 0.0–1.0 |
+
+The per-zone brake is calculated as: `fMaxScale = 1.0 - (1.0 - globalBrake) × fSolarSensitivity`. A zone with `fSolarSensitivity = 0.3` (e.g., Guest — below grade, no windows) only sees 30% of the global brake effect, while a zone with `fSolarSensitivity = 1.0` (e.g., Living — large south-facing windows) gets the full brake.
 
 #### Dynamic Proportional Cap (The "Shoulder Season Droop")
 
@@ -282,9 +290,12 @@ When the Weather Strategist's load modifier exceeds 1.0 (pre-charge active), the
 
 ```
 fFeedForward_Global = MAX(0.0, Strategist.rLoadModifier - 1.0)
+fFeedForward_Zone = fFeedForward_Global × zone.fPreChargeFactor
 ```
 
-For each zone, if the room temperature is within 0.5°F above setpoint (not clearly overheated), the duty is the *maximum* of the PID output and the feed-forward value, then scaled by the solar brake. This guarantees a minimum duty floor during pre-charge regardless of PID state, while respecting individual zone temperatures.
+Each zone's feed-forward is scaled by its `fPreChargeFactor` — zones with high thermal exposure (e.g., Office at 1.0) get 100% of the pre-charge boost, while zones with less exposure (e.g., PriBath at 0.3) get only 30%.
+
+For each zone, if the room temperature is within 0.5°F above setpoint (not clearly overheated), the duty is the *maximum* of the PID output and the zone's feed-forward value, then scaled by the solar brake. This guarantees a minimum duty floor during pre-charge regardless of PID state, while respecting individual zone temperatures and exposure.
 
 ### 6. Slow PWM — Valve Timing
 
@@ -430,21 +441,21 @@ This ensures that a PLC reboot, power outage, or firmware update does not lose u
 
 ## Zone Configuration Reference
 
-| # | Zone | BTU/hr | PWM Cycle | MinRun | MinOff | Kp (Band) | Ti | Slab Type |
-|---|---|---|---|---|---|---|---|---|
-| 1 | Garage | 57,900 | 60 min | 10 min | 5 min | 3.0°F | 7200s | Concrete |
-| 2 | Mudroom | 2,800 | 45 min | 10 min | 5 min | 3.0°F | 5400s | Concrete |
-| 3 | Gym | 6,200 | 45 min | 10 min | 5 min | 3.0°F | 5400s | Concrete |
-| 4 | Hearth | 19,000 | 60 min | 10 min | 5 min | 3.0°F | 7200s | Concrete |
-| 5 | Living | 35,800 | 60 min | 10 min | 5 min | 3.0°F | 7200s | Concrete |
-| 6 | Guest | 14,000 | 60 min | 10 min | 5 min | 4.0°F | 7200s | Concrete |
-| 7 | Primary | 18,000 | 45 min | 10 min | 5 min | 2.5°F | 5400s | Gypcrete |
-| 8 | PriBath | 3,700 | 30 min | 5 min | 5 min | 2.0°F | 3600s | Gypcrete |
-| 9 | Bed1 | 5,100 | 30 min | 5 min | 5 min | 2.0°F | 3600s | Gypcrete |
-| 10 | Bed2 | 5,500 | 30 min | 5 min | 5 min | 2.0°F | 3600s | Gypcrete |
-| 11 | Sitting | 16,700 | 60 min | 10 min | 5 min | 3.5°F | 7200s | Gypcrete |
-| 12 | Bed3 | 5,300 | 30 min | 5 min | 5 min | 2.0°F | 3600s | Gypcrete |
-| 13 | Office | 9,000 | 30 min | 5 min | 5 min | 3.0°F | 3600s | Gypcrete |
+| # | Zone | BTU/hr | PWM Cycle | MinRun | MinOff | Kp (Band) | Ti | PreCharge | Solar Sens. | Slab Type |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | Garage | 57,900 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.0 | Concrete |
+| 2 | Mudroom | 2,800 | 45 min | 10 min | 5 min | 3.2°F | 5400s | 0.5 | 1.0 | Concrete |
+| 3 | Gym | 6,200 | 45 min | 10 min | 5 min | 3.2°F | 5400s | 0.7 | 0.6 | Concrete |
+| 4 | Hearth | 19,000 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.8 | Concrete |
+| 5 | Living | 35,800 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 1.0 | Concrete |
+| 6 | Guest | 14,000 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.3 | Concrete |
+| 7 | Primary | 18,000 | 45 min | 10 min | 5 min | 2.5°F | 5400s | 0.7 | 0.7 | Gypcrete |
+| 8 | PriBath | 3,700 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.3 | 0.3 | Gypcrete |
+| 9 | Bed1 | 5,100 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
+| 10 | Bed2 | 5,500 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
+| 11 | Sitting | 16,700 | 60 min | 10 min | 5 min | 3.5°F | 7200s | 0.5 | 0.7 | Gypcrete |
+| 12 | Bed3 | 5,300 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
+| 13 | Office | 9,000 | 30 min | 5 min | 5 min | 3.0°F | 3600s | 1.0 | 1.0 | Gypcrete |
 
 ---
 
