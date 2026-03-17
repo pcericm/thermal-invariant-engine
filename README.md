@@ -275,18 +275,18 @@ Y := MIN(Y, KP * fError * 1.5);
 
 ```mermaid
 xychart-beta
-    title "Dynamic Proportional Cap vs Pure Proportional (3.2F Band)"
+    title "Duty Cycle: Without vs With Solar Brake (Pb=3.2F, Brake=0.65)"
     x-axis "Temperature Error (°F)" [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
     y-axis "Duty Cycle (%)" 0 --> 100
-    line "Pure Proportional (Kp=31.25%)" [0, 15.6, 31.3, 46.9, 62.5, 78.1, 93.8]
-    line "Dynamic Cap (1.5x Kp)" [0, 23.4, 46.9, 70.3, 93.8, 100, 100]
-    line "Braked Cap (0.65x)" [0, 15.2, 30.5, 45.7, 61.0, 65.0, 65.0]
+    line "Without Brake" [0, 23.4, 46.9, 70.3, 93.8, 100, 100]
+    line "With Brake (0.65)" [0, 15.2, 30.5, 45.7, 61.0, 65.0, 65.0]
 ```
 
-*   **The "Dynamic Cap" Line (Top, green):** The absolute maximum duty cycle the system is allowed to output ($Kp \times Error \times 1.5$).
-*   **The "Pure Proportional" Line (Middle, blue):** What the Proportional band calls for purely based on error.
-*   **The "Braked Cap" Line (Bottom, red):** The effective maximum when the solar brake is active (e.g., at 0.65). The brake compresses the entire cap curve downward, capping duty well below where it would otherwise be.
-*   **The Gap Between Pure Proportional and Braked Cap:** This is the thermal headroom — the heat that the PID *could* deliver but the solar brake intentionally withholds, creating space in the slab for incoming solar gain.
+*   **Without Brake (green, top):** The maximum duty the PID reaches after the integral winds up over sustained heating. This is calculated as $Kp \times Error \times 1.5$, capped at 100%.
+*   **With Brake (blue, bottom):** The effective duty when the solar brake is active. The brake multiplies the PID output by 0.65, reducing duty at every error level. Capped at 65%.
+*   **The gap between lines:** The thermal headroom the brake carves out for solar absorption. At 1.0°F error, the brake cuts duty from 47% to 30%. At 1.5°F error, from 70% to 46% — a **24% absolute reduction**.
+
+The brake effectively strips out the integral's contribution. After braking, the duty falls to approximately what pure proportional control alone would produce (since $1.5 \times 0.65 = 0.975 \approx 1.0$). This means the droop under braking is the *natural* proportional offset — the same behavior as a P-only controller — while the integral is being held in check by the brake until solar conditions pass.
 
 Notice how the cap physically forces the duty cycle to squeeze down to 0% as it approaches 0.0 on the bottom axis. Even if it is -20°F outside and the slow Integral (Ti=7200s) has spent 8 hours calculating a massive heat "debt," this cap explicitly blocks the boiler from paying that debt as the room nears the setpoint.
 
