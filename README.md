@@ -69,11 +69,17 @@ This system achieves most of the same outcomes through **heuristic rules layered
 
 - **No model to get wrong.** MPC requires an accurate thermal model of the building — wall R-values, thermal mass per zone, infiltration rates, window solar heat gain coefficients. These are notoriously difficult to identify correctly in a real building, and a bad model makes MPC *worse* than simple PID. This system needs no model; it reacts to measured temperatures and forecast weather.
 
-- **Deterministic and auditable.** Every decision the PLC makes can be traced to a specific rule: "the brake is at 0.6 because the forecast says sunny and it's 30°F outside." MPC produces optimal-but-opaque control trajectories that are difficult to debug when something goes wrong at 2 AM.
+- **Extrapolation failure on extreme conditions.** An auto-learning MPC identifies its thermal model from observed data. If the coldest night during the training period was 5°F, the model has never seen how the building behaves at −20°F. When a freak cold snap hits, the model extrapolates linearly — underestimating non-linear effects like increased infiltration, window heat loss, and ground-contact losses at extreme temperatures. The optimizer plans a control trajectory based on a model that's wrong for these conditions, and by the time the state estimator corrects (actual temps diverge from predicted), the system is already 2–3°F behind in a plant with 60+ minute thermal lag. For a home at 7,000' where −20°F can mean frozen pipes, this is an unacceptable risk. **This system handles −20°F with zero special logic** — the ODR curve clamps at 120°F supply water, the PID runs at maximum duty, and the Governor holds the boiler in continuous firing. Every component responds proportionally to measured conditions with no model to extrapolate.
 
-- **Runs on a PLC at 20ms.** MPC solvers (QP, MILP) require significant compute. This system's rules evaluate in microseconds on industrial hardware with no operating system dependencies, no Python runtime, no network calls to a cloud optimizer.
+- **Deterministic and auditable.** Every decision the PLC makes can be traced to a specific rule: "the brake is at 0.65 because the forecast says sunny and it's 30°F outside, and the Mudroom has fSolarSensitivity=1.0." MPC produces optimal-but-opaque control trajectories that are difficult to debug when something goes wrong at 2 AM.
+
+- **Runs on a PLC at 20ms.** MPC solvers (QP, MILP) require significant compute — typically a server running Python or Julia with a dedicated optimization library. This system's rules evaluate in microseconds on industrial hardware with no operating system dependencies, no Python runtime, no network calls to a cloud optimizer. A compute failure in MPC means no control; a Node-RED failure here means fallback to straight PID.
+
+- **No training period vulnerability.** Auto-learning MPC needs 1–2 weeks of data collection to identify the building's thermal model. During that window, the system is either running open-loop (no optimization at all) or using a partially-identified model that may be dangerously inaccurate. Seasonal changes (first cold snap of winter, first sunny spring day) require re-identification. This system works correctly from the first boot with manually-configured parameters.
 
 - **Graceful degradation.** If the weather forecast is wrong or stale, the system falls back to straight PID at load factor 1.0. MPC with stale forecast data can produce aggressively wrong control actions because the optimizer trusts its predictions.
+
+- **No ongoing maintenance burden.** MPC models drift as the building changes — new furniture absorbs thermal mass differently, window treatments change solar gain coefficients, weatherstripping degrades. A production MPC system requires periodic re-identification and validation. This system's parameters are physical constants (BTU ratings, slab type, solar exposure) that change only when the building physically changes, and adjustments are single-line config edits.
 
 - **Thermal mass is forgiving.** The key insight is that a building with 20+ tons of concrete slab has enormous thermal inertia. The control doesn't need to be *optimal* — it needs to be *roughly right and never catastrophically wrong*. Simple rules like "reduce duty 40% when sunny and above 35°F" capture 90%+ of the MPC benefit without any of the implementation risk.
 
@@ -269,20 +275,36 @@ Y := MIN(Y, KP * fError * 1.5);
 
 ```mermaid
 xychart-beta
-    title "Dynamic Proportional Cap vs Pure Proportional (3.0F Band)"
+    title "Dynamic Proportional Cap vs Pure Proportional (3.2F Band)"
     x-axis "Temperature Error (°F)" [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
     y-axis "Duty Cycle (%)" 0 --> 100
-    line "Pure Proportional (Kp=33.3%)" [0, 16.6, 33.3, 50.0, 66.6, 83.3, 100]
-    line "Dynamic Cap (1.5x Kp)" [0, 24.9, 50.0, 75.0, 100, 100, 100]
+    line "Pure Proportional (Kp=31.25%)" [0, 15.6, 31.3, 46.9, 62.5, 78.1, 93.8]
+    line "Dynamic Cap (1.5x Kp)" [0, 23.4, 46.9, 70.3, 93.8, 100, 100]
+    line "Braked Cap (0.65x)" [0, 15.2, 30.5, 45.7, 61.0, 65.0, 65.0]
 ```
 
 *   **The "Pure Proportional" Line (Bottom):** What the Proportional band calls for purely based on error.
 *   **The "Dynamic Cap" Line (Top):** The absolute maximum duty cycle the system is allowed to output ($Kp \times Error \times 1.5$).
-*   **The Gap Between:** This is the *only* space where the Integral (Ti) is allowed to operate.
+*   **The "Braked Cap" Line (Middle):** The effective maximum when the solar brake is active (e.g., at 0.65). The brake compresses the entire cap curve downward.
+*   **The Gap Between Cap and Braked Cap:** This is the thermal headroom — the heat that the PID *could* deliver but the solar brake intentionally withholds, creating space in the slab for incoming solar gain.
 
-Notice how the cap physically forces the duty cycle to squeeze down to 0% as it approaches 0.0 on the bottom axis. Even if it is -20°F outside and the slow Integral (Ti=7200s) has spent 8 hours calculating a massive heat "debt," this cap explicitly blocks the boiler from paying that debt as the room nears the setpoint. 
+Notice how the cap physically forces the duty cycle to squeeze down to 0% as it approaches 0.0 on the bottom axis. Even if it is -20°F outside and the slow Integral (Ti=7200s) has spent 8 hours calculating a massive heat "debt," this cap explicitly blocks the boiler from paying that debt as the room nears the setpoint.
 
-This explicitly manufactures a "Droop" during shoulder seasons—allowing rooms to intentionally sink to 66.5°F overnight rather than holding perfectly flat at 68.0°F. This creates a thermal void in the concrete, ensuring that when the 8:00 AM sun arrives, the solar gain is absorbed harmlessly without causing a sweltering overshoot.
+#### How the Cap and Solar Brake Work Together
+
+This droop is not a bug — it is a **deliberate thermal strategy** that works in concert with the solar brake intelligence. The geometric cap creates the mechanism; the solar brake exploits it:
+
+1. **Cap creates the ceiling.** The PID's accumulated output (integral) is continuously capped at `KP × error × 1.5`. As the zone approaches setpoint, the cap tightens and forcibly pulls duty down. This manufactures a controlled droop — rooms intentionally sink 0.5–1.5°F below setpoint overnight.
+
+2. **Solar brake cuts into the ceiling.** When the brake is active (e.g., 0.65), it multiplies the entire output by 0.65, compressing the cap curve further. At 0.5°F error: the unbraked cap allows 23% duty, but the braked cap only allows 15%. The PID cannot compensate because the cap prevents Y from climbing high enough to offset the brake. This is the key — the cap and brake **double-team** the PID, carving out a thermal void in the slab.
+
+3. **Solar gain fills the void.** When the sun arrives, the slab is slightly below its fully-charged state. Instead of the solar radiation pushing a 68.0°F slab to 69.5°F (overshoot), it pushes a 66.5°F slab to 68.0°F (absorbed perfectly). The thermal headroom created by the cap+brake duo absorbs the free solar heat without comfort penalty.
+
+This is why the system produces better results than either component alone — the cap without the brake just creates droop for no reason, and the brake without the cap gets overridden by PID compensation. Together, they create intentional thermal headroom timed to coincide with forecast solar gain.
+
+**Observed droop magnitude:** In practice, the manufactured droop is approximately **1–1.5°F** below setpoint per zone (e.g., rooms settle at 66.5–67.0°F against a 68°F setpoint). The droop scales proportionally with the brake factor — a heavy brake of 0.4 (clear sunny day) produces the full 1.5°F void, while a light brake of 0.8 (partly cloudy) produces only 0.5°F. When the brake releases to 1.0 (no solar expected), the cap still limits duty near setpoint but the PID runs unbraked and the droop narrows to ≤0.3°F — just the natural proportional offset of the velocity-form PID.
+
+**Why the droop doesn't feel cold:** Unlike a traditional thermostat setback — where the system turns off completely and the slab cools for hours, producing a cold floor that radiates discomfort even if the air temperature is acceptable — the manufactured droop **never stops heating**. The PID is still pulsing heat into the floor at a reduced but non-zero duty cycle (15–30% during heavy braking). The slab surface remains warm to the touch because it's continuously receiving heat, just less than the full unbraked amount. A room at 66.5°F with an actively heated floor feels fundamentally different from a room at 66.5°F with a slab that's been cold for 4 hours — radiant heat from the floor surface dominates the occupant's thermal comfort perception, not the air temperature alone. The droop is measurable on a sensor but imperceptible underfoot.
 
 ### 5. Feed-Forward Injection
 
