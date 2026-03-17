@@ -283,10 +283,10 @@ xychart-beta
     line "Braked Cap (0.65x)" [0, 15.2, 30.5, 45.7, 61.0, 65.0, 65.0]
 ```
 
-*   **The "Pure Proportional" Line (Bottom):** What the Proportional band calls for purely based on error.
-*   **The "Dynamic Cap" Line (Top):** The absolute maximum duty cycle the system is allowed to output ($Kp \times Error \times 1.5$).
-*   **The "Braked Cap" Line (Middle):** The effective maximum when the solar brake is active (e.g., at 0.65). The brake compresses the entire cap curve downward.
-*   **The Gap Between Cap and Braked Cap:** This is the thermal headroom — the heat that the PID *could* deliver but the solar brake intentionally withholds, creating space in the slab for incoming solar gain.
+*   **The "Dynamic Cap" Line (Top, green):** The absolute maximum duty cycle the system is allowed to output ($Kp \times Error \times 1.5$).
+*   **The "Pure Proportional" Line (Middle, blue):** What the Proportional band calls for purely based on error.
+*   **The "Braked Cap" Line (Bottom, red):** The effective maximum when the solar brake is active (e.g., at 0.65). The brake compresses the entire cap curve downward, capping duty well below where it would otherwise be.
+*   **The Gap Between Pure Proportional and Braked Cap:** This is the thermal headroom — the heat that the PID *could* deliver but the solar brake intentionally withholds, creating space in the slab for incoming solar gain.
 
 Notice how the cap physically forces the duty cycle to squeeze down to 0% as it approaches 0.0 on the bottom axis. Even if it is -20°F outside and the slow Integral (Ti=7200s) has spent 8 hours calculating a massive heat "debt," this cap explicitly blocks the boiler from paying that debt as the room nears the setpoint.
 
