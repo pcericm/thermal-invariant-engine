@@ -484,6 +484,33 @@ This ensures that a PLC reboot, power outage, or firmware update does not lose u
 | 11 | Sitting | 16,700 | 60 min | 10 min | 5 min | 3.5°F | 7200s | 0.5 | 0.7 | Gypcrete |
 | 12 | Bed3 | 5,300 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
 | 13 | Office | 9,000 | 30 min | 5 min | 5 min | 3.0°F | 3600s | 1.0 | 1.0 | Gypcrete |
+---
+
+## Building Envelope — Glazing Analysis
+
+Window areas sourced from the RadiantWorks Manual J design report (8/16/2022), cross-referenced against the permit set window schedule (A-6.1). All windows are metal-clad wood with a minimum U-value of 0.36 (R-2.78). The majority are **fixed** (non-operable), which significantly reduces infiltration compared to the Manual J's "semi-tight" assumption. Design conditions: −7°F outdoor, 70°F indoor.
+
+| # | Zone | Wall Area | Window Area | Glazing Ratio | Window Heat Loss | % of Zone Loss | Solar Sens. |
+|---|---|---|---|---|---|---|---|
+| 1 | Garage | 3,146 ft² | 511 ft²† | 16.2% | 4,217 BTU/h | 9% | 0.0 |
+| 2 | Mudroom | 400 ft² | 72 ft² | 18.0% | 1,794 BTU/h | 32% | 1.0 |
+| 3 | Gym | 400 ft² | 102 ft² | 25.5% | 2,530 BTU/h | 45% | 0.6 |
+| 4 | Hearth | 720 ft² | 95 ft² | 13.2% | 2,358 BTU/h | 20% | 0.8 |
+| 5 | Living | 1,550 ft² | **592 ft²** | **38.2%** | 14,472 BTU/h | **51%** | 1.0 |
+| 6 | Guest | 660 ft² | 144 ft² | 21.8% | 3,558 BTU/h | 40% | 0.3 |
+| 7 | Primary | 1,330 ft² | **321 ft²** | 24.1% | 7,876 BTU/h | 40% | 0.7 |
+| 8 | Bed 212 | 330 ft² | 70 ft² | 21.2% | 1,745 BTU/h | 37% | 0.3 |
+| 9 | Bed 208 | 400 ft² | 64 ft² | 16.0% | 1,598 BTU/h | 31% | 0.5 |
+| 10 | Sitting | 750 ft² | **242 ft²** | **32.3%** | 5,950 BTU/h | 38% | 0.7 |
+| 11 | Bed 2115 | 300 ft² | 55 ft² | 18.3% | 1,376 BTU/h | 28% | 0.5 |
+| 12 | Office | 720 ft² | 136 ft² | 18.9% | 3,362 BTU/h | 39% | 1.0 |
+| | **Total** | **10,706 ft²** | **2,404 ft²** | **22.5%** | **50,836 BTU/h** | **34%** | |
+
+†Includes 4 aluminum/glass overhead garage doors (3× 10'×8' + 1× 10'×10' = 340 sq ft). Heat loss column reflects Manual J window-only calculation; actual garage glazing heat loss is significantly higher due to garage doors at R-2.0.
+
+The permit set window schedule (82 windows) totals 1,441 sq ft of window glazing, plus an additional **~800 sq ft of glazed folding multi-panel doors** (D101, D103, D103.1, D109, D115.1, D201, D201.1, D211 — ranging from 9' to 16' wide × 8' tall). These glazed doors are concentrated in the Living/Great Room and upper level, bringing total actual glazing to approximately **2,241 sq ft** — about 8.5% more than the Manual J window-only analysis. This additional glazing further validates the aggressive `fSolarSensitivity = 1.0` setting on Living.
+
+The `fSolarSensitivity` values are calibrated to each zone's solar exposure, not just glazing ratio alone. Guest Suite has significant glass (144 ft², 21.8%) but `fSolarSensitivity = 0.3` because it is partially below grade with limited direct sun angles. Office has moderate glass (136 ft²) but `fSolarSensitivity = 1.0` due to direct east/south exposure with 3 exposed walls. Sitting Room has 242 ft² of west-facing glass but gets limited direct sun due to a proper eave and hillside shading — its `fSolarSensitivity = 0.7` primarily compensates for stack-effect heating rising from the Hearth zone below.
 
 ---
 
