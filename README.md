@@ -77,7 +77,7 @@ This system achieves most of the same outcomes through **heuristic rules layered
 
 - **Occupancy and infiltration sensitivity.** A residential MPC model is trained on a typical 2–4 person household. When 15 guests arrive for the holidays — adding ~1,500 BTU/hr of body heat, oven running for hours, doors opening repeatedly — the model's disturbance predictions are wrong. Wind-driven infiltration adds another unmodeled variable: a 30 mph wind can increase total building heat loss by 25–35% compared to calm conditions at the same temperature, primarily through air leakage that varies non-linearly with wind speed, direction, and building orientation. These disturbances are difficult to identify and impossible to predict. This system's PID simply measures the temperature change and adjusts — no occupancy model or infiltration coefficient needed.
 
-- **Deterministic and auditable.** Every decision the PLC makes can be traced to a specific rule: "the brake is at 0.65 because the forecast says sunny and it's 30°F outside, and the Mudroom has fSolarSensitivity=1.0." MPC produces optimal-but-opaque control trajectories that are difficult to debug when something goes wrong at 2 AM.
+- **Deterministic and auditable.** Every decision the PLC makes can be traced to a specific rule: "the brake is at 0.30 because the forecast says sunny and it's 30°F outside, and the Mudroom has fSolarSensitivity=1.0." MPC produces optimal-but-opaque control trajectories that are difficult to debug when something goes wrong at 2 AM.
 
 - **Runs on a PLC at 20ms.** MPC solvers (QP, MILP) require significant compute — typically a server running Python or Julia with a dedicated optimization library. This system's rules evaluate in microseconds on industrial hardware with no operating system dependencies, no Python runtime, no network calls to a cloud optimizer. A compute failure in MPC means no control; a Node-RED failure here means fallback to straight PID.
 
@@ -190,13 +190,13 @@ The solar brake is designed to catch the impact of solar gain *before it arrives
 | Outdoor Temp | Brake Factor | Effective Load Reduction |
 |---|---|---|
 | < 10°F | 1.0 | No brake (too cold for meaningful solar gain) |
-| 10–15°F | 0.8 | 20% reduction |
-| 15–25°F | 0.7 | 30% reduction |
-| 25–35°F | 0.6 | 40% reduction |
-| 35–40°F | 0.5 | 50% reduction |
-| > 40°F | 0.4 | 60% reduction |
+| 10–15°F | 0.86 | 14% reduction |
+| 15–25°F | 0.70 | 30% reduction |
+| 25–35°F | 0.50 | 50% reduction |
+| 35–45°F | 0.35 | 65% reduction |
+| > 45°F | 0.30 | 70% reduction |
 
-A user-configurable maximum brake (`GVL_Persistent.rSolarBrakeMax`, default 0.4 = 60% max cut) prevents the brake from being too aggressive.
+The maximum brake (default `ReducePct = 0.70` = 70% max cut at WarmCeiling) scales linearly from 0% at ColdFloor (10°F) to 70% at WarmCeiling (45°F).
 
 ### 3. Pre-Charge Boost — Cold Front Preparation
 
@@ -281,18 +281,18 @@ Y := MIN(Y, KP * fError * 1.5);
 
 ```mermaid
 xychart-beta
-    title "Duty Cycle: Without vs With Solar Brake (Pb=3.2F, Brake=0.65)"
+    title "Duty Cycle: Without vs With Solar Brake (Pb=3.2F, Brake=0.30)"
     x-axis "Temperature Error (°F)" [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
     y-axis "Duty Cycle (%)" 0 --> 100
     line "Without Brake" [0, 23.4, 46.9, 70.3, 93.8, 100, 100]
-    line "With Brake (0.65)" [0, 15.2, 30.5, 45.7, 61.0, 65.0, 65.0]
+    line "With Brake (0.30)" [0, 7.0, 14.1, 21.1, 28.1, 30.0, 30.0]
 ```
 
-*   **Without Brake (green, top):** The maximum duty the PID reaches after the integral winds up over sustained heating. This is calculated as $Kp \times Error \times 1.5$, capped at 100%.
-*   **With Brake (blue, bottom):** The effective duty when the solar brake is active. The brake multiplies the PID output by 0.65, reducing duty at every error level. Capped at 65%.
-*   **The gap between lines:** The thermal headroom the brake carves out for solar absorption. At 1.0°F error, the brake cuts duty from 47% to 30%. At 1.5°F error, from 70% to 46% — a **24% absolute reduction**.
+*   **Without Brake (blue, top):** The maximum duty the PID reaches after the integral winds up over sustained heating. This is calculated as $Kp \times Error \times 1.5$, capped at 100%.
+*   **With Brake (green, bottom):** The effective duty when the solar brake is at maximum (0.30). The brake multiplies the PID output by 0.30, reducing duty at every error level. Capped at 30%.
+*   **The gap between lines:** The thermal headroom the brake carves out for solar absorption. At 1.0°F error, the brake cuts duty from 47% to 14%. At 1.5°F error, from 70% to 21% — a **49% absolute reduction**.
 
-The brake effectively strips out the integral's contribution. After braking, the duty falls to approximately what pure proportional control alone would produce (since $1.5 \times 0.65 = 0.975 \approx 1.0$). This means the droop under braking is the *natural* proportional offset — the same behavior as a P-only controller — while the integral is being held in check by the brake until solar conditions pass.
+At maximum brake (0.30), the duty is crushed well below what even pure proportional control would produce. The integral's accumulated contribution is effectively eliminated — a zone at 1.5°F error that would normally run at 70% duty is held to just 21%. This aggressive headroom is justified by the solar analysis: the Living zone alone receives up to 20,000 BTU/h of solar gain on clear days, which fills the thermal void the brake creates.
 
 Notice how the cap physically forces the duty cycle to squeeze down to 0% as it approaches 0.0 on the bottom axis. Even if it is -20°F outside and the slow Integral (Ti=7200s) has spent 8 hours calculating a massive heat "debt," this cap explicitly blocks the boiler from paying that debt as the room nears the setpoint.
 
@@ -302,7 +302,7 @@ This droop is not a bug — it is a **deliberate thermal strategy** that works i
 
 1. **Cap creates the ceiling.** The PID's accumulated output (integral) is continuously capped at `KP × error × 1.5`. As the zone approaches setpoint, the cap tightens and forcibly pulls duty down. This manufactures a controlled droop — rooms intentionally sink 0.5–1.5°F below setpoint overnight.
 
-2. **Solar brake cuts into the ceiling.** When the brake is active (e.g., 0.65), it multiplies the entire output by 0.65, compressing the cap curve further. At 0.5°F error: the unbraked cap allows 23% duty, but the braked cap only allows 15%. The PID cannot compensate because the cap prevents Y from climbing high enough to offset the brake. This is the key — the cap and brake **double-team** the PID, carving out a thermal void in the slab.
+2. **Solar brake cuts into the ceiling.** When the brake is at maximum (0.30), it multiplies the entire output by 0.30, compressing the cap curve dramatically. At 0.5°F error: the unbraked cap allows 23% duty, but the braked cap only allows 7%. The PID cannot compensate because the cap prevents Y from climbing high enough to offset the brake. This is the key — the cap and brake **double-team** the PID, carving out a thermal void in the slab.
 
 3. **Solar gain fills the void.** When the sun arrives, the slab is slightly below its fully-charged state. Instead of the solar radiation pushing a 68.0°F slab to 69.5°F (overshoot), it pushes a 66.5°F slab to 68.0°F (absorbed perfectly). The thermal headroom created by the cap+brake duo absorbs the free solar heat without comfort penalty.
 
@@ -488,7 +488,7 @@ This ensures that a PLC reboot, power outage, or firmware update does not lose u
 
 ## Building Envelope — Glazing Analysis
 
-Window areas sourced from the RadiantWorks Manual J design report (8/16/2022), cross-referenced against the permit set window schedule (A-6.1). All windows are metal-clad wood with a minimum U-value of 0.36 (R-2.78). The majority are **fixed** (non-operable), which significantly reduces infiltration compared to the Manual J's "semi-tight" assumption. Design conditions: −7°F outdoor, 70°F indoor.
+Window areas sourced from the Manual J design report, cross-referenced against the permit set window schedule and the Sierra Pacific glass order. All windows are Sierra Pacific clad wood with Cardinal **LoE-366** insulated glass — actual performance: **U-factor 0.29** (R-3.45), **SHGC 0.24** for windows and 0.17 for glazed doors. This significantly exceeds the permit's minimum U-value spec of 0.36, meaning actual window heat loss is ~20% lower than the Manual J calculated. The majority of windows are **fixed** (non-operable), which further reduces infiltration below the Manual J's "semi-tight" assumption. Design conditions: −7°F outdoor, 70°F indoor.
 
 | # | Zone | Wall Area | Window Area | Glazing Ratio | Window Heat Loss | % of Zone Loss | Solar Sens. |
 |---|---|---|---|---|---|---|---|
@@ -510,7 +510,35 @@ Window areas sourced from the RadiantWorks Manual J design report (8/16/2022), c
 
 The permit set window schedule (82 windows) totals 1,441 sq ft of window glazing, plus an additional **~800 sq ft of glazed folding multi-panel doors** (D101, D103, D103.1, D109, D115.1, D201, D201.1, D211 — ranging from 9' to 16' wide × 8' tall). These glazed doors are concentrated in the Living/Great Room and upper level, bringing total actual glazing to approximately **2,241 sq ft** — about 8.5% more than the Manual J window-only analysis. This additional glazing further validates the aggressive `fSolarSensitivity = 1.0` setting on Living.
 
-The `fSolarSensitivity` values are calibrated to each zone's solar exposure, not just glazing ratio alone. Guest Suite has significant glass (144 ft², 21.8%) but `fSolarSensitivity = 0.3` because it is partially below grade with limited direct sun angles. Office has moderate glass (136 ft²) but `fSolarSensitivity = 1.0` due to direct east/south exposure with 3 exposed walls. Sitting Room has 242 ft² of west-facing glass but gets limited direct sun due to a proper eave and hillside shading — its `fSolarSensitivity = 0.7` primarily compensates for stack-effect heating rising from the Hearth zone below.
+Glazing ratios are **zone-level averages** — they include all exterior wall area across every room in the zone (bedrooms, bathrooms, closets, hallways). The *room-level* glazing where windows are concentrated is significantly higher. For example, Primary shows 24.1% at the zone level, but its 321 ft² of glass is concentrated in the bedroom — the master bath, walk-in closet, and hallway contribute walls but no windows, diluting the ratio. The actual bedroom wall may be 50–60%+ glass.
+
+### Solar Orientation & BTU Delivery
+
+The property's front door faces **north** (confirmed by MJ8 and permit set elevations). At **~7,000' elevation**, winter sun angles are low (26° altitude at solstice noon) and atmospheric clarity is high, producing strong direct solar radiation on south-facing surfaces. With the actual **SHGC of 0.24**, each square foot of south-facing glass delivers approximately **60 BTU/hr** on a clear winter day at peak.
+
+| Zone | South Glass | East Glass | West Glass | North Glass | Peak Solar BTU/h | Design Load | Solar % | fSolar |
+|---|---|---|---|---|---|---|---|---|
+| Garage | — | — | — | 171 ft² | 821 | 57,900 | 1% | 0.0 |
+| Mudroom | **72 ft²** | — | — | — | **4,320** | 2,800 | **154%** | 1.0 |
+| Gym | — | 50 ft² | 52 ft² | — | 1,872 | 6,200 | 30% | 0.6 |
+| Hearth | 30 ft² | 30 ft² | 35 ft² | — | 3,060 | 19,000 | 16% | 0.8 |
+| Living | **250 ft²** | 120 ft² | 100 ft² | 122 ft² | **19,906** | 35,800 | **56%** | 1.0 |
+| Guest | — | 72 ft² | 72 ft² | — | 2,592 | 14,000 | 19% | 0.3 |
+| Primary | **160 ft²** | 80 ft² | 81 ft² | — | **12,516** | 18,000 | **70%** | 0.7 |
+| Bed 212 | — | 35 ft² | 35 ft² | — | 1,260 | 3,700 | 34% | 0.3 |
+| Bed 208 | — | 32 ft² | 32 ft² | — | 1,152 | 4,700 | 25% | 0.5 |
+| Sitting | — | — | **242 ft²** | — | 8,712† | 16,700 | 52% | 0.7 |
+| Bed 2115 | 28 ft² | — | 27 ft² | — | 2,652 | 5,300 | 50% | 0.5 |
+| Office | **68 ft²** | 40 ft² | 28 ft² | — | **5,520** | 9,000 | **61%** | 1.0 |
+
+†Sitting Room's west glass has a proper eave and hillside shading — actual delivery is a fraction of the theoretical peak. The 0.7 sensitivity primarily compensates for stack-effect heating rising from the Hearth zone below, not direct solar.
+
+**Key findings:**
+- **Mudroom** — 72 ft² of direct south glass can deliver **154% of the zone's design heating load** on a clear day. The solar brake at `fSolarSensitivity = 1.0` is essential to prevent massive overshoot in this small zone.
+- **Living** — with 250 ft² of south-facing glass plus glazed folding doors, peak solar gain approaches **20,000 BTU/h** — equivalent to 56% of the zone's design load and ~7% of the derated boiler output from sunlight alone.
+- **Primary** — 160 ft² south + east/west glass delivers up to 70% of the zone's design load. At `fSolarSensitivity = 0.7`, the brake scales this appropriately.
+- **Office** — despite moderate total glass (136 ft²), east + south exposure on 3 walls delivers 61% of the zone's design load, validating `fSolarSensitivity = 1.0`.
+- **Guest** — at 0.3 sensitivity, the brake correctly reflects that below-grade east/west glass receives minimal direct winter sun despite the glazing area.
 
 ---
 
