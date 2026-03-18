@@ -5,7 +5,7 @@
 The Thermal Invariant Engine is the real-time control firmware for a **13-zone radiant hydronic heating system** in a residential home at 7,000' elevation. All three software layers — **CODESYS** (PLC runtime), **Node-RED** (weather intelligence), and **Home Assistant** (device driver/UI) — run on a single **RevPi Connect 5** industrial computer, communicating over local Modbus TCP. A **RevPi RO module** provides relay outputs for snowmelt contact switch control. The PLC task executes at a 20ms scan rate.
 
 The system manages:
-- **13 radiant floor heating zones** across two slab types (poured concrete and gypcrete over-pour)
+- **13 radiant floor heating zones** across two slab types: 5" poured concrete (~210 tons) on the garage and main floor, and 1.5–2" gypcrete over-pour (~24–32 tons) on the upper floor — over **230 tons** of total thermal mass
 - **Laars FT399 condensing boiler** — rated 399,000 BTU/hr at sea level, derated ~25% at 7,000' altitude. The effective minimum fire rate is approximately 32,000 BTU/hr. The boiler is configured with a **15°F CH (central heating) temperature differential** between supply and return, which maximizes BTU extraction per firing cycle by allowing the return water to cool significantly before recirculating. This wider differential means the system pulls more heat out of each gallon of water, enabling longer intervals between firing cycles and higher condensing efficiency.
 - **13 zone valves** (wax actuators on hydronic manifolds, driven by Ecobee call-for-heat signals)
 - **Caleffi zone controller** (detects flow demand, activates circulator pump and boiler)
@@ -87,7 +87,7 @@ This system achieves most of the same outcomes through **heuristic rules layered
 
 - **No ongoing maintenance burden.** MPC models drift as the building changes — new furniture absorbs thermal mass differently, window treatments change solar gain coefficients, weatherstripping degrades. A production MPC system requires periodic re-identification and validation. This system's parameters are physical constants (BTU ratings, slab type, solar exposure) that change only when the building physically changes, and adjustments are single-line config edits.
 
-- **Thermal mass is forgiving.** The key insight is that a building with 20+ tons of concrete slab has enormous thermal inertia. The control doesn't need to be *optimal* — it needs to be *roughly right and never catastrophically wrong*. Simple rules like "reduce duty 40% when sunny and above 35°F" capture 90%+ of the MPC benefit without any of the implementation risk.
+- **Thermal mass is forgiving.** The key insight is that this building has enormous thermal inertia — 5" concrete slab (~210 tons) plus 1.5–2" gypcrete (~24–32 tons), totaling over **230 tons** of thermal mass. The control doesn't need to be *optimal* — it needs to be *roughly right and never catastrophically wrong*. Simple rules like "reduce duty 40% when sunny and above 35°F" capture 90%+ of the MPC benefit without any of the implementation risk.
 
 The system is effectively a **hand-tuned MPC** where the "model" is encoded as ODR curves, brake tables, and pre-charge thresholds, and the "optimizer" is the PID controller adapting in real time. If the rules need adjustment, they're changed in a few lines of config — not by re-identifying a 13-zone thermal model.
 
