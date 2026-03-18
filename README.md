@@ -291,7 +291,7 @@ xychart-beta
 
 *   **Without Brake (blue, top):** The maximum duty the PID reaches after the integral winds up over sustained heating. This is calculated as $Kp \times Error \times 1.5$, capped at 100%.
 *   **Guest — minimal brake (green, middle):** At `fSolarSensitivity = 0.3`, the zone only sees 30% of the global brake. Effective multiplier = 0.79 (21% cut). Guest is below grade with limited sun angles — it gets most of its heating budget preserved.
-*   **Living — full brake (yellow, bottom):** At `fSolarSensitivity = 1.0`, the zone tracks the global brake exactly. Effective multiplier = 0.30 (70% cut). With 250 ft² of south-facing glass delivering ~20,000 BTU/h, this aggressive brake is necessary.
+*   **Living — full brake (red, bottom):** At `fSolarSensitivity = 1.0`, the zone tracks the global brake exactly. Effective multiplier = 0.30 (70% cut). With 250 ft² of south-facing glass delivering ~20,000 BTU/h, this aggressive brake is necessary.
 *   **The gap between lines:** The thermal headroom the brake carves out for solar absorption. At 1.0°F error, the brake cuts Living from 47% to 14% but only cuts Guest from 47% to 37% — a **10% cut** vs **33% cut**.
 
 At maximum brake (0.30), the duty is crushed well below what even pure proportional control would produce. The integral's accumulated contribution is effectively eliminated — a zone at 1.5°F error that would normally run at 70% duty is held to just 21%. This aggressive headroom is justified by the solar analysis: the Living zone alone receives up to 20,000 BTU/h of solar gain on clear days, which fills the thermal void the brake creates.
