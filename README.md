@@ -285,12 +285,14 @@ xychart-beta
     x-axis "Temperature Error (°F)" [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
     y-axis "Duty Cycle (%)" 0 --> 100
     line "Without Brake" [0, 23.4, 46.9, 70.3, 93.8, 100, 100]
-    line "With Brake (0.30)" [0, 7.0, 14.1, 21.1, 28.1, 30.0, 30.0]
+    line "Guest (sens=0.3)" [0, 18.5, 37.1, 55.5, 74.1, 79.0, 79.0]
+    line "Living (sens=1.0)" [0, 7.0, 14.1, 21.1, 28.1, 30.0, 30.0]
 ```
 
 *   **Without Brake (blue, top):** The maximum duty the PID reaches after the integral winds up over sustained heating. This is calculated as $Kp \times Error \times 1.5$, capped at 100%.
-*   **With Brake (green, bottom):** The effective duty when the solar brake is at maximum (0.30). The brake multiplies the PID output by 0.30, reducing duty at every error level. Capped at 30%.
-*   **The gap between lines:** The thermal headroom the brake carves out for solar absorption. At 1.0°F error, the brake cuts duty from 47% to 14%. At 1.5°F error, from 70% to 21% — a **49% absolute reduction**.
+*   **Guest — minimal brake (green, middle):** At `fSolarSensitivity = 0.3`, the zone only sees 30% of the global brake. Effective multiplier = 0.79 (21% cut). Guest is below grade with limited sun angles — it gets most of its heating budget preserved.
+*   **Living — full brake (yellow, bottom):** At `fSolarSensitivity = 1.0`, the zone tracks the global brake exactly. Effective multiplier = 0.30 (70% cut). With 250 ft² of south-facing glass delivering ~20,000 BTU/h, this aggressive brake is necessary.
+*   **The gap between lines:** The thermal headroom the brake carves out for solar absorption. At 1.0°F error, the brake cuts Living from 47% to 14% but only cuts Guest from 47% to 37% — a **10% cut** vs **33% cut**.
 
 At maximum brake (0.30), the duty is crushed well below what even pure proportional control would produce. The integral's accumulated contribution is effectively eliminated — a zone at 1.5°F error that would normally run at 70% duty is held to just 21%. This aggressive headroom is justified by the solar analysis: the Living zone alone receives up to 20,000 BTU/h of solar gain on clear days, which fills the thermal void the brake creates.
 
