@@ -8,7 +8,7 @@ The system manages:
 - **13 radiant floor heating zones** across two slab types: 5" poured concrete (~210 tons) on the garage and main floor, and 1.5–2" gypcrete over-pour (~24–32 tons) on the upper floor — over **230 tons** of total thermal mass
 - **Laars FT399 condensing boiler** — rated 399,000 BTU/hr at sea level, derated ~25% at 7,000' altitude. The effective minimum fire rate is approximately 32,000 BTU/hr. The boiler is configured with a **15°F CH (central heating) temperature differential** between supply and return, which maximizes BTU extraction per firing cycle by allowing the return water to cool significantly before recirculating. This wider differential means the system pulls more heat out of each gallon of water, enabling longer intervals between firing cycles and higher condensing efficiency.
 - **13 zone valves** (wax actuators on hydronic manifolds, driven by Ecobee call-for-heat signals)
-- **Caleffi zone controller** (detects flow demand, activates circulator pump and boiler)
+- **Caleffi zone controllers** (detects flow demand, activates circulator pump and boiler)
 - **5 forced-air handlers** for temperature equalization between zones
 - **2 snowmelt relay outputs** (driveway and outdoor patios — not yet implemented)
 
