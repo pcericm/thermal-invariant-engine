@@ -531,24 +531,24 @@ Ceiling heights sourced from the permit set building sections (Sheet A-3.1). The
 
 | Zone | Level | Plate/Ceiling Height | Notes |
 |---|---|---|---|
-| Garage | Garage | ~10' | Open to trusses, no finished ceiling above driveway doors |
-| Mudroom | Main | ~10' | Standard main-floor plate |
-| Gym | Main (partial below-grade) | ~10' | Below-grade concrete walls |
-| Hearth | Main | ~10' | Standard main-floor plate |
-| Living/Great Room | Main → Upper | **~20–22' vaulted** | Open to upper level with full-height south glass; 12' floor-to-floor + open to roof structure |
-| Guest | Main (below-grade) | ~9' | Walkout basement, slightly lower plate |
-| Primary | Upper | ~9' | Standard upper-floor plate (10' floor-to-floor minus ~1' floor structure) |
-| PriBath | Upper | ~9' | Standard upper-floor plate |
-| Bed1 | Upper | ~9' | Standard upper-floor plate |
-| Bed2 | Upper | ~9' | Standard upper-floor plate |
-| Sitting | Upper | ~9–10' | Adjacent to stairwell, may have partial vault |
-| Bed3 | Upper | ~9' | Standard upper-floor plate |
-| Office | Mezzanine | ~9' | Split level between main and upper (6,754') |
+| Garage | Garage | ~11' | Finished ceiling, closed |
+| Mudroom | Main | ~11' | Standard main-floor plate |
+| Gym | Main (partial below-grade) | ~11' | Below-grade concrete walls |
+| Hearth | Main | ~11' | Standard main-floor plate |
+| Living/Great Room | Main → Upper | **~14–18'** | Flat ceiling, open to upper level with full-height south glass |
+| Guest | Main (below-grade) | ~10' | Walkout basement |
+| Primary | Upper | **~12–14'** | Flat ceiling, tall plate height with large south-facing glass wall |
+| PriBath | Upper | ~10' | Standard upper-floor plate |
+| Bed1 | Upper | ~10' | Standard upper-floor plate |
+| Bed2 | Upper | ~10' | Standard upper-floor plate |
+| Sitting | Upper | ~10' | Adjacent to stairwell |
+| Bed3 | Upper | ~10' | Standard upper-floor plate |
+| Office | Mezzanine | ~10' | Split level between main and upper (6,754') |
 
-**Thermal implications:** The tall ceilings — especially the Living room's ~20–22' vault — create significantly more air volume per square foot of floor area than standard 8' rooms. This means:
-- **More stratification.** Warm air rises above the thermostat's sensing height, creating a temperature gradient that makes the thermostat read cooler than the average room temperature. The radiant slab partially compensates (heat rises from floor, not ceiling), but the effect is real in rooms with 20'+ ceilings.
+**Thermal implications:** The tall ceilings — especially the Living room's ~14–18' double-height space — create significantly more air volume per square foot of floor area than standard 8' rooms. This means:
+- **More stratification.** Warm air rises above the thermostat's sensing height, creating a temperature gradient that makes the thermostat read cooler than the average room temperature. The radiant slab partially compensates (heat rises from floor, not ceiling), but the effect is real in rooms with 14'+ ceilings.
 - **Larger air volume to condition.** The Living zone's actual air volume is roughly 2.5× what an 8' ceiling would produce for the same floor area. During air handler shuttling, this larger volume acts as a buffer.
-- **Stack effect amplification.** The Hearth→Sitting thermal coupling via the open stairwell is amplified by the Living room's canyon-like vertical space. Heat rises from the main floor and pools at the upper level, which is why Sitting has an elevated `fSolarSensitivity = 0.7` despite limited direct glazing.
+- **Stack effect amplification.** The Hearth→Sitting thermal coupling via the open stairwell is amplified by the Living room's tall vertical space. Heat rises from the main floor and pools at the upper level, which is why Sitting has an elevated `fSolarSensitivity = 0.7` despite limited direct glazing.
 
 ### Solar Orientation & BTU Delivery
 
