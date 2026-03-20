@@ -8,7 +8,7 @@ The system manages:
 - **13 radiant floor heating zones** across two slab types: 5" poured concrete (~210 tons) on the garage and main floor, and 1.5–2" gypcrete over-pour (~24–32 tons) on the upper floor — over **230 tons** of total thermal mass
 - **Laars FT399 condensing boiler** — rated 399,000 BTU/hr at sea level, derated ~25% at 7,000' altitude. The effective minimum fire rate is approximately 32,000 BTU/hr. The boiler is configured with a **15°F CH (central heating) temperature differential** between supply and return, which maximizes BTU extraction per firing cycle by allowing the return water to cool significantly before recirculating. This wider differential means the system pulls more heat out of each gallon of water, enabling longer intervals between firing cycles and higher condensing efficiency.
 - **13 zone valves** (wax actuators on hydronic manifolds, driven by Ecobee call-for-heat signals)
-- **Caleffi zone controllers** (detects flow demand, activates circulator pump and boiler)
+- **Caleffi zone controllers** (detect flow demand, activate circulator pump and boiler)
 - **5 forced-air handlers** for temperature equalization between zones
 - **2 snowmelt relay outputs** (driveway and outdoor patios — not yet implemented)
 
@@ -513,6 +513,42 @@ Window areas sourced from the Manual J design report, cross-referenced against t
 The permit set window schedule (82 windows) totals 1,441 sq ft of window glazing, plus an additional **~800 sq ft of glazed folding multi-panel doors** (D101, D103, D103.1, D109, D115.1, D201, D201.1, D211 — ranging from 9' to 16' wide × 8' tall). These glazed doors are concentrated in the Living/Great Room and upper level, bringing total actual glazing to approximately **2,241 sq ft** — about 8.5% more than the Manual J window-only analysis. This additional glazing further validates the aggressive `fSolarSensitivity = 1.0` setting on Living.
 
 Glazing ratios are **zone-level averages** — they include all exterior wall area across every room in the zone (bedrooms, bathrooms, closets, hallways). The *room-level* glazing where windows are concentrated is significantly higher. For example, Primary shows 24.1% at the zone level, but its 321 ft² of glass is concentrated in the bedroom — the master bath, walk-in closet, and hallway contribute walls but no windows, diluting the ratio. The actual bedroom wall may be 50–60%+ glass.
+
+### Ceiling Heights & Room Volumes
+
+Ceiling heights sourced from the permit set building sections (Sheet A-3.1). The building has four distinct floor elevations with varying plate heights. Default head height is **8'-0"** per the window schedule note, but the main floor features significantly taller ceilings, and the Living/Great Room has a vaulted ceiling open to the upper level.
+
+**Floor elevations** (from building sections):
+| Level | Elevation | Floor-to-Floor |
+|---|---|---|
+| Garage | 6,742' | — |
+| Main | 6,747' | 5' above garage (stepped entry) |
+| Office (mezzanine) | 6,754' | 7' above main |
+| Upper | 6,759' | 12' above main |
+| Roof Bearing | 6,769' | 10' above upper |
+
+**Ceiling heights by zone** (derived from sections and plan annotations):
+
+| Zone | Level | Plate/Ceiling Height | Notes |
+|---|---|---|---|
+| Garage | Garage | ~10' | Open to trusses, no finished ceiling above driveway doors |
+| Mudroom | Main | ~10' | Standard main-floor plate |
+| Gym | Main (partial below-grade) | ~10' | Below-grade concrete walls |
+| Hearth | Main | ~10' | Standard main-floor plate |
+| Living/Great Room | Main → Upper | **~20–22' vaulted** | Open to upper level with full-height south glass; 12' floor-to-floor + open to roof structure |
+| Guest | Main (below-grade) | ~9' | Walkout basement, slightly lower plate |
+| Primary | Upper | ~9' | Standard upper-floor plate (10' floor-to-floor minus ~1' floor structure) |
+| PriBath | Upper | ~9' | Standard upper-floor plate |
+| Bed1 | Upper | ~9' | Standard upper-floor plate |
+| Bed2 | Upper | ~9' | Standard upper-floor plate |
+| Sitting | Upper | ~9–10' | Adjacent to stairwell, may have partial vault |
+| Bed3 | Upper | ~9' | Standard upper-floor plate |
+| Office | Mezzanine | ~9' | Split level between main and upper (6,754') |
+
+**Thermal implications:** The tall ceilings — especially the Living room's ~20–22' vault — create significantly more air volume per square foot of floor area than standard 8' rooms. This means:
+- **More stratification.** Warm air rises above the thermostat's sensing height, creating a temperature gradient that makes the thermostat read cooler than the average room temperature. The radiant slab partially compensates (heat rises from floor, not ceiling), but the effect is real in rooms with 20'+ ceilings.
+- **Larger air volume to condition.** The Living zone's actual air volume is roughly 2.5× what an 8' ceiling would produce for the same floor area. During air handler shuttling, this larger volume acts as a buffer.
+- **Stack effect amplification.** The Hearth→Sitting thermal coupling via the open stairwell is amplified by the Living room's canyon-like vertical space. Heat rises from the main floor and pools at the upper level, which is why Sitting has an elevated `fSolarSensitivity = 0.7` despite limited direct glazing.
 
 ### Solar Orientation & BTU Delivery
 
