@@ -572,7 +572,7 @@ This ensures that a PLC reboot, power outage, or firmware update does not lose u
 | 2 | Mudroom | 2,800 | 45 min | 10 min | 5 min | 3.2°F | 5400s | 0.5 | 1.0 | Concrete |
 | 3 | Gym | 6,200 | 45 min | 10 min | 5 min | 3.2°F | 5400s | 0.7 | 0.6 | Concrete |
 | 4 | Hearth | 19,000 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.8 | Concrete |
-| 5 | Living | 35,800 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 1.0 | Concrete |
+| 5 | Living† | 35,800 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 1.0 | Concrete |
 | 6 | Guest | 14,000 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.3 | Concrete |
 | 7 | Primary | 22,000 | 45 min | 10 min | 5 min | 2.5°F | 5400s | 0.7 | 0.7 | Gypcrete |
 | 8 | PriBath | 3,700 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.3 | 0.3 | Gypcrete |
@@ -582,6 +582,8 @@ This ensures that a PLC reboot, power outage, or firmware update does not lose u
 | 12 | Bed3 | 5,300 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
 | 13 | Office | 9,000 | 30 min | 5 min | 5 min | 3.0°F | 3600s | 1.0 | 1.0 | Gypcrete |
 ---
+
+†Living zone includes the **Kitchen, Dining Room, and Entry** — open floor plan on a single radiant loop. The MJ8 "Entry/Great Zone" covers this entire area (Great Rm 585 ft², Dining 466 ft², Entry 79 ft²).
 
 ## Building Envelope — Glazing Analysis
 
