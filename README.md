@@ -117,6 +117,101 @@ The system is effectively a **hand-tuned MPC** where the "model" is encoded as O
 └─────────────────────────────────────────────────────────────┘
 ```
 
+```mermaid
+graph TB
+    subgraph FIELD["🏠 Field Devices"]
+        subgraph THERM["Ecobee Thermostats ×13 (Heating)"]
+            ECO["Temp + Humidity<br/>Sensors"]
+            RELAY["Call-for-Heat<br/>Relay Output"]
+        end
+        ECO_AH["Ecobee Thermostats ×5<br/>(Forced Air — Heat/Cool/Fan)"]
+        TEMPEST["WeatherFlow Tempest<br/>(Temp, Wind, Lux,<br/>Precip, Irradiance)"]
+        WAX["Wax Actuators ×13<br/>(Zone Valves)"]
+        CALEFFI["Caleffi Controllers<br/>(Flow Detection)"]
+        PUMP["Circulator Pump"]
+        BOILER["Laars FT399<br/>Condensing Boiler<br/>(ODR Managed)"]
+        MANIFOLD["Hydronic Manifolds<br/>(2 Banks × 13 Loops)"]
+        SLAB["Radiant Slab<br/>5in Concrete + 1.5in Gypcrete<br/>(230+ tons thermal mass)"]
+        AH["Air Handlers ×5"]
+        REVPI_RO["RevPi RO Module<br/>(Snowmelt Relays)"]
+    end
+
+    subgraph REVPI["🖥️ RevPi Connect 5 (Single Device)"]
+        subgraph HA_LAYER["Home Assistant — Driver Layer"]
+            HA_CORE["HA Core"]
+            HOMEKIT["HomeKit<br/>Controller"]
+            WF_INT["WeatherFlow<br/>Integration"]
+            MODBUS_HA["Modbus<br/>Client"]
+            RADIANT["radiant_heating.yaml<br/>(Setpoint ±2°F Writer)"]
+            DASH["Dashboards<br/>& History"]
+        end
+        
+        subgraph NR_LAYER["Node-RED — Weather Intelligence"]
+            WEATHER["Weather Pipeline<br/>(Forecast, Trend, Solar)"]
+            DECISION["Decision Engine<br/>(Solar Brake + Pre-Charge)"]
+            ODR["ODR Calculator<br/>(Supply Water Temp)"]
+            MODBUS_NR["Modbus<br/>Client"]
+        end
+        
+        subgraph CODESYS_LAYER["CODESYS — Thermal Invariant Engine (20ms scan)"]
+            STRAT["FB_Weather_Strategist<br/>ODR + Brake Scaling"]
+            PID["FB_PID ×13<br/>Velocity-Form PID"]
+            PWM["FB_PWM ×13<br/>Duty → On/Off Timing"]
+            ZC["FB_ZoneControl ×13<br/>PID + PWM + Brake"]
+            INV["FB_Zone_Invariant ×13<br/>MinRun / MinOff Safety"]
+            ZM["FB_ZoneManager<br/>Load Aggregation"]
+            GOV["FB_Heating_Governor<br/>Boiler State Machine"]
+            AIR["FB_AirMarshal<br/>Air Handler Control"]
+        end
+    end
+
+    %% WeatherFlow Station → HA
+    TEMPEST -->|"Local API"| WF_INT
+    WF_INT -->|"Entities:<br/>sensor.st_*"| HA_CORE
+
+    %% HA ↔ Ecobees
+    HOMEKIT <-->|"HomeKit<br/>(Local WiFi)"| THERM
+
+    %% HA ↔ CODESYS
+    MODBUS_HA <-->|"Modbus TCP<br/>Temps, Setpoints,<br/>Modes, Valve States"| CODESYS_LAYER
+    MODBUS_HA -->|"Reads Valve<br/>Commands"| RADIANT
+    RADIANT -->|"Writes Setpoint<br/>±2°F"| HOMEKIT
+    HA_CORE --> DASH
+
+    %% Node-RED ← HA (Weather Entities)
+    HA_CORE -->|"Websocket<br/>(Weather Entities +<br/>Forecast Service)"| WEATHER
+    WEATHER --> DECISION
+    DECISION --> ODR
+    ODR --> MODBUS_NR
+    MODBUS_NR <-->|"Modbus TCP<br/>Brake Factor, ODR,<br/>Feed-Forward, Telemetry"| CODESYS_LAYER
+
+    %% CODESYS Internal Flow
+    STRAT --> ZC
+    ZC --- PID
+    ZC --- PWM
+    ZC --> ZM
+    ZM --> GOV
+    GOV --> INV
+    AIR --> AH
+
+    %% Physical Control Chain
+    RELAY -->|"24V"| WAX
+    WAX --> MANIFOLD
+    CALEFFI -->|"Flow Detected"| PUMP
+    CALEFFI -->|"Flow Detected"| BOILER
+    PUMP --> MANIFOLD
+    BOILER -->|"85–120°F Supply"| MANIFOLD
+    MANIFOLD --> SLAB
+    AIR -->|"Via HA +<br/>HomeKit"| ECO_AH
+    ECO_AH -->|"Fan Relay"| AH
+
+    %% Styling
+    classDef revpi fill:#f3e5f5,stroke:#7b1fa2
+    classDef field fill:#e8f5e9,stroke:#388e3c
+    class REVPI revpi
+    class FIELD field
+```
+
 **Node-RED's weather intelligence:** Node-RED does far more than relay weather data — it computes derived metrics that give the system an advantage over standard ODR curves. It calculates **"feels like" temperature** (wind chill / heat index) and uses that to dynamically adjust the brake factor, because a 30°F day with 25 mph wind loses heat from the building envelope much faster than a calm 30°F day. It also factors in precipitation (rain/snow vetoes solar braking — clouds always accompany precip), forecast confidence, and time-of-day solar angle to produce a composite brake factor that captures the *actual* thermal load on the building, not just the dry-bulb outdoor temperature. This means the system can distinguish between "30°F and sunny" (brake hard — solar gain is coming) and "30°F, cloudy, 20 mph wind" (no brake, boost if anything — the building is bleeding heat). A standard ODR curve with fixed cycle times can't make this distinction.
 
 **Why Home Assistant?** The system uses consumer-grade thermostats (Ecobee, etc.) that communicate via HomeKit — they have no native BACnet or Modbus capability. Home Assistant serves primarily as a **device driver layer**, providing a robust HomeKit controller platform that bridges these consumer devices into the industrial Modbus backbone. It collects temperature readings, setpoints, and thermostat mode commands from the thermostats and writes them to CODESYS registers, while exposing CODESYS outputs (valve states, duty cycles, BTU telemetry) back to the user through dashboards.
@@ -514,9 +609,11 @@ The permit set window schedule (82 windows) totals 1,441 sq ft of window glazing
 
 Glazing ratios are **zone-level averages** — they include all exterior wall area across every room in the zone (bedrooms, bathrooms, closets, hallways). The *room-level* glazing where windows are concentrated is significantly higher. For example, Primary shows 24.1% at the zone level, but its 321 ft² of glass is concentrated in the bedroom — the master bath, walk-in closet, and hallway contribute walls but no windows, diluting the ratio. The actual bedroom wall may be 50–60%+ glass.
 
+**Powered shades:** Every window in the house is equipped with a **Lutron motorized shade** managed by the house's main Home Assistant automation platform (separate from the Thermal Invariant Engine). Shade position directly affects solar heat gain — when shades are closed, the effective SHGC drops significantly, reducing solar BTU delivery through the glass. The Invariant Engine does not currently control or read shade position; the solar brake operates on worst-case (shades open) assumptions. Future integration could use shade state as an input to modulate the brake factor — closed shades on south-facing glass would warrant less aggressive braking.
+
 ### Ceiling Heights & Room Volumes
 
-Ceiling heights sourced from the permit set building sections (Sheet A-3.1). The building has four distinct floor elevations with varying plate heights. Default head height is **8'-0"** per the window schedule note, but the main floor features significantly taller ceilings, and the Living/Great Room has a vaulted ceiling open to the upper level.
+Ceiling heights sourced from the permit set building sections (Sheet A-3.1). The building has four distinct floor elevations with varying plate heights. Default head height is **8'-0"** per the window schedule note, but the main floor features significantly taller ceilings, and the Living/Great Room has a double-height flat ceiling open to the upper level.
 
 **Floor elevations** (from building sections):
 | Level | Elevation | Floor-to-Floor |
