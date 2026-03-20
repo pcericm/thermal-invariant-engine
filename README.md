@@ -479,7 +479,7 @@ This ensures that a PLC reboot, power outage, or firmware update does not lose u
 | 4 | Hearth | 19,000 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.8 | Concrete |
 | 5 | Living | 35,800 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 1.0 | Concrete |
 | 6 | Guest | 14,000 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.3 | Concrete |
-| 7 | Primary | 18,000 | 45 min | 10 min | 5 min | 2.5°F | 5400s | 0.7 | 0.7 | Gypcrete |
+| 7 | Primary | 22,000 | 45 min | 10 min | 5 min | 2.5°F | 5400s | 0.7 | 0.7 | Gypcrete |
 | 8 | PriBath | 3,700 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.3 | 0.3 | Gypcrete |
 | 9 | Bed1 | 5,100 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
 | 10 | Bed2 | 5,500 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
@@ -562,7 +562,7 @@ The property's front door faces **north** (confirmed by MJ8 and permit set eleva
 | Hearth | 30 ft² | 30 ft² | 35 ft² | — | 3,060 | 19,000 | 16% | 0.8 |
 | Living | **250 ft²** | 120 ft² | 100 ft² | 122 ft² | **19,906** | 35,800 | **56%** | 1.0 |
 | Guest | — | 72 ft² | 72 ft² | — | 2,592 | 14,000 | 19% | 0.3 |
-| Primary | **160 ft²** | 80 ft² | 81 ft² | — | **12,516** | 18,000 | **70%** | 0.7 |
+| Primary | **160 ft²** | 80 ft² | 81 ft² | — | **12,516** | 22,000 | **57%** | 0.7 |
 | Bed 212 | — | 35 ft² | 35 ft² | — | 1,260 | 3,700 | 34% | 0.3 |
 | Bed 208 | — | 32 ft² | 32 ft² | — | 1,152 | 4,700 | 25% | 0.5 |
 | Sitting | — | — | **242 ft²** | — | 8,712† | 16,700 | 52% | 0.7 |
