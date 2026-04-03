@@ -278,9 +278,9 @@ The slope is **−0.5385°F supply per °F outdoor** (35°F supply range over 65
 
 The solar brake is designed to catch the impact of solar gain *before it arrives* without causing comfort issues. Unlike a traditional setback — which cuts the thermostat and turns off the heat entirely, letting the slab go cold — the solar brake **still puts BTUs into the slab**, just at a reduced rate. This keeps the floors warm and comfortable while creating thermal headroom: the slab is slightly below its fully-charged state, so when solar radiation pours through the windows, the thermal mass absorbs that free heat instead of overheating the room. The result is fuel savings without cold floors.
 
-**Primary source:** Node-RED calculates a brake factor (0.4–1.4) using local lux sensors, weather forecasts, precipitation data, and time-of-day logic. This is passed via Modbus as `NR_Brake_Factor`. Values below 1.0 represent solar braking (reducing heat), while values above 1.0 represent pre-charge boosting (proactively adding heat before a forecast cold front). The typical range during solar braking is 0.4–0.8; during pre-charge events the factor reaches 1.2–1.4.
+**Primary source:** Node-RED is the **single source of truth** for the system load factor. It calculates a combined brake/boost factor (0.1–1.5) using local lux sensors, weather forecasts, precipitation data, and time-of-day logic. This is passed via Modbus as `NR_Brake_Factor`. Values below 1.0 represent solar braking (reducing heat), 1.0 is neutral, and values above 1.0 represent pre-charge boosting (proactively adding heat before a forecast cold front). The typical range during solar braking is 0.4–0.8; during pre-charge events the factor reaches 1.2–1.4. When Node-RED is online (valid data, fresh), the PLC Strategist uses this value directly as `rLoadModifier` — no internal pre-charge logic runs, preventing double-stacking.
 
-**Fallback:** If Node-RED is offline or data is stale (no sequence counter update in 10 minutes), a built-in step-function provides conservative braking based on outdoor temperature:
+**Fallback:** If Node-RED is offline or data is stale (no sequence counter update in 10 minutes), the Strategist activates its internal solar brake step-function and pre-charge logic as a safety net:
 
 | Outdoor Temp | Brake Factor | Effective Load Reduction |
 |---|---|---|
@@ -322,7 +322,7 @@ A textbook position-form PID controller assumes the plant responds promptly to c
 
 - **Bang-bang behavior.** With a fast integral time, the PID output snaps to 100% the moment the room is below setpoint and 0% the moment it's above. For a system with 60-minute PWM cycles, this produces the same on/off behavior as a dumb thermostat — all the complexity of PID with none of the benefit.
 
-- **Lockout bomb.** When the governor locks a zone out for 15 minutes (boiler rest), the integral keeps accumulating because the error hasn't changed. When the lockout releases, the PID output explodes — the zone demands 100% duty because it's been "trying" to heat for 15 minutes with no result. This causes overshoot, boiler overload, and fights with other zones.
+- **Lockout bomb.** When the governor locks a zone out for 5 minutes (boiler rest), the integral keeps accumulating because the error hasn't changed. When the lockout releases, the PID output explodes — the zone demands 100% duty because it's been "trying" to heat for several minutes with no result. This causes overshoot, boiler overload, and fights with other zones.
 
 #### Why Velocity Form Solves This
 
@@ -420,19 +420,20 @@ fFeedForward_Zone = fFeedForward_Global × zone.fPreChargeFactor
 
 Each zone's feed-forward is scaled by its `fPreChargeFactor` — zones with high thermal exposure (e.g., Office at 1.0) get 100% of the pre-charge boost, while zones with less exposure (e.g., PriBath at 0.3) get only 30%.
 
-For each zone, if the room temperature is within 0.5°F above setpoint (not clearly overheated), the duty is the *maximum* of the PID output and the zone's feed-forward value, then scaled by the solar brake. This guarantees a minimum duty floor during pre-charge regardless of PID state, while respecting individual zone temperatures and exposure.
+For each zone, if the room temperature is within 0.5°F above setpoint (not clearly overheated), the duty is the **sum** of the PID output and the zone's feed-forward value (additive), then scaled by the solar brake. PID and feed-forward serve independent objectives: PID closes the temperature gap to setpoint, while feed-forward banks extra BTUs in the slab for incoming cold. One should not absorb the other. The total is clamped at 100%. At/above setpoint (PID output = 0), duty equals the feed-forward alone.
 
 ### 6. Slow PWM — Valve Timing
 
 PID output (0–100% duty) is converted to valve ON/OFF timing using a slow PWM with configurable period:
 
-- **Concrete zones**: 45–60 minute cycles
-- **Gypcrete zones**: 30 minute cycles
+- **Heavy concrete zones** (Garage, Hearth, Living, Guest): 90 minute cycles
+- **Medium zones** (Mudroom, Gym, Primary, Sitting): 60 minute cycles
+- **Light gypcrete zones** (Bath, Beds, Office): 30 minute cycles
 
 **Key behaviors:**
 - **Latch at cycle start**: The ON-time is calculated and locked when the cycle begins. Mid-cycle duty changes don't affect the current cycle, preventing valve chatter.
 - **Gap bridging**: If the calculated OFF-time is less than 5 minutes, the valve stays on for the entire period — a 5-minute off period isn't worth the valve actuator wear.
-- **Safety catch**: If the valve was latched OFF but demand rises above 10% within the first 5 minutes of the cycle, the PWM recalculates. This prevents a full 60-minute wait when demand suddenly increases.
+- **Safety catch**: If the valve was latched OFF but demand rises above 10% within the first 5 minutes of the cycle, the PWM recalculates. This prevents a full 90-minute wait when demand suddenly increases.
 
 ### 7. Zone Invariant — Physical Safety Layer
 
@@ -449,8 +450,9 @@ Each zone has a state machine that sits between the PWM output and the actual va
 **Timing by zone type:**
 | Type | tMinRun | tMinOff |
 |---|---|---|
-| Concrete (Garage, Mudroom, Gym, Hearth, Living, Guest, Primary, Sitting) | 10 min | 5 min |
-| Gypcrete small (PriBath, Bed1, Bed2, Bed3, Office) | 5 min | 5 min |
+| Heavy concrete (Garage, Hearth, Living, Guest) | 10 min | 5 min |
+| Medium (Mudroom, Gym, Primary, Sitting) | 5 min | 5 min |
+| Light gypcrete (PriBath, Bed1, Bed2, Bed3, Office) | 5 min | 5 min |
 
 **Policy debounce**: The PWM output drops to FALSE for ~20ms on every cycle reset. Without debounce, this would trigger MIN_RUN_HOLD on every PWM cycle boundary. A 100ms debounce timer on `bPolicy_Call` filters out these false drops.
 
@@ -487,9 +489,9 @@ The governor is a **3-state machine** controlling the boiler:
     │                     │ Grace ≥ 2min
     │                     ▼
     └──── MinRest ──── LOCKOUT
-          ≥ 15min         │
-                          │ Load sustains ≥ 5k
-                          │ for 30 seconds
+          ≥ 5min          │
+          then            │ Load sustains ≥ 5k
+          debounce        │ for 30 seconds
                           └──→ ACTIVE (re-entry)
 ```
 
@@ -497,11 +499,11 @@ The governor is a **3-state machine** controlling the boiler:
 |---|---|---|
 | **IDLE** | Off | Waits for aggregate load to exceed start threshold (5,000 BTU/hr) |
 | **ACTIVE** | On | Fires until load drops below stop threshold (3,000 BTU/hr) with minimum run (10 min) and grace period (2 min) |
-| **LOCKOUT** | Off | Mandatory rest (15 min minimum). Can re-enter ACTIVE early if load sustains above start threshold for 30 continuous seconds |
+| **LOCKOUT** | Off | Mandatory rest (5 min minimum). After rest completes, can re-enter ACTIVE if load sustains above start threshold for 30 continuous seconds. Otherwise transitions to IDLE. |
 
 **Hysteresis band**: Start at 5k BTU, stop at 3k BTU. The 2k gap prevents the boiler from flickering at boundary loads. This relatively low minimum structural load is specifically viable because the boiler is configured with a **15°F CH (Central Heating) Differential**. By allowing the circulating return water to cool significantly before reigniting the burner, the boiler extracts maximum BTUs from the loop and stretches out its firing cycles, preventing short-cycling even when the aggregate zone load is sitting far below the boiler's physical minimum fire rate (~32,000 BTU/hr).
 
-**Lockout re-entry debounce**: 30-second sustained load requirement prevents valve-cycling-induced load oscillation from flipping the boiler on and off.
+**Lockout rest enforcement**: The 5-minute rest period must fully elapse before the re-entry debounce timer begins. This prevents premature re-entry when `fTotal_Potential_Load` (PID-based) stays above threshold during lockout. The 30-second sustained load debounce only runs after rest completes, ensuring the boiler gets a clean break between firing cycles. The 5-minute rest matches the shortest zone-level `tMinOff` and is appropriate for the Laars FT399 commercial boiler, which handles its own internal anti-short-cycle protection.
 
 **Insufficient Load gate**: During IDLE, if the total rated demand of requesting zones is below 3,000 BTU (e.g., only a small bathroom is calling), zones are locked out until enough aggregate demand accumulates. This prevents the boiler from firing for trivially small loads. The gate uses rated (not duty-weighted) demand to avoid circular deadlock where low duty prevents boiler start, which prevents valve opening, which prevents load accumulation.
 
@@ -568,17 +570,17 @@ This ensures that a PLC reboot, power outage, or firmware update does not lose u
 
 | # | Zone | BTU/hr | PWM Cycle | MinRun | MinOff | Kp (Band) | Ti | PreCharge | Solar Sens. | Slab Type |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | Garage | 57,900 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.0 | Concrete |
-| 2 | Mudroom | 2,800 | 45 min | 10 min | 5 min | 3.2°F | 5400s | 0.5 | 1.0 | Concrete |
-| 3 | Gym | 6,200 | 45 min | 10 min | 5 min | 3.2°F | 5400s | 0.7 | 0.6 | Concrete |
-| 4 | Hearth | 19,000 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.8 | Concrete |
-| 5 | Living† | 35,800 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 1.0 | Concrete |
-| 6 | Guest | 14,000 | 60 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.3 | Concrete |
-| 7 | Primary | 22,000 | 45 min | 10 min | 5 min | 2.5°F | 5400s | 0.7 | 0.7 | Gypcrete |
+| 1 | Garage | 57,900 | 90 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.0 | Concrete |
+| 2 | Mudroom | 2,800 | 60 min | 5 min | 5 min | 3.2°F | 5400s | 1.0 | 1.0 | Concrete |
+| 3 | Gym | 6,200 | 60 min | 5 min | 5 min | 3.2°F | 5400s | 0.7 | 0.6 | Concrete |
+| 4 | Hearth | 19,000 | 90 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.8 | Concrete |
+| 5 | Living† | 35,800 | 90 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 1.0 | Concrete |
+| 6 | Guest | 14,000 | 90 min | 10 min | 5 min | 3.2°F | 7200s | 1.0 | 0.3 | Concrete |
+| 7 | Primary | 22,000 | 60 min | 5 min | 5 min | 2.5°F | 5400s | 0.7 | 0.7 | Gypcrete |
 | 8 | PriBath | 3,700 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.3 | 0.3 | Gypcrete |
 | 9 | Bed1 | 5,100 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
 | 10 | Bed2 | 5,500 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
-| 11 | Sitting | 16,700 | 60 min | 10 min | 5 min | 3.5°F | 7200s | 0.5 | 0.7 | Gypcrete |
+| 11 | Sitting | 16,700 | 60 min | 5 min | 5 min | 3.5°F | 7200s | 0.5 | 0.7 | Gypcrete |
 | 12 | Bed3 | 5,300 | 30 min | 5 min | 5 min | 2.0°F | 3600s | 0.5 | 0.5 | Gypcrete |
 | 13 | Office | 9,000 | 30 min | 5 min | 5 min | 3.0°F | 3600s | 1.0 | 1.0 | Gypcrete |
 ---
