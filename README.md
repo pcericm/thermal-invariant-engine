@@ -266,11 +266,11 @@ The boiler's target supply water temperature is calculated from outdoor temperat
 | Outdoor Temp | Supply Water Temp | Rationale |
 |---|---|---|
 | ≤ 0°F | 120°F | Maximum heat for coldest conditions |
-| 32°F | 102°F | Moderate heating for typical winter |
-| 50°F | 93°F | Mild heating for shoulder season |
-| ≥ 65°F | 85°F | Minimum — just enough to maintain floor warmth |
+| 32°F | 100°F | Moderate heating for typical winter |
+| 50°F | 89°F | Mild heating for shoulder season |
+| ≥ 65°F | 80°F | Minimum — just enough to maintain floor buoyancy |
 
-The slope is **−0.5385°F supply per °F outdoor** (35°F supply range over 65°F outdoor range).
+The slope is **−0.6154°F supply per °F outdoor** (40°F supply range over 65°F outdoor range).
 
 
 
@@ -422,7 +422,20 @@ Each zone's feed-forward is scaled by its `fPreChargeFactor` — zones with high
 
 For each zone, if the room temperature is within 0.5°F above setpoint (not clearly overheated), the duty is the **sum** of the PID output and the zone's feed-forward value (additive), then scaled by the solar brake. PID and feed-forward serve independent objectives: PID closes the temperature gap to setpoint, while feed-forward banks extra BTUs in the slab for incoming cold. One should not absorb the other. The total is clamped at 100%. At/above setpoint (PID output = 0), duty equals the feed-forward alone.
 
-### 6. Slow PWM — Valve Timing
+### 6. Always-On Maintenance Pulse
+
+High-mass radiant slabs suffer from a "warmup tax" — if the slab goes completely cold during long off periods, the boiler must expend massive energy just to overcome the thermal inertia of the concrete before any heat radiates into the room.
+
+To prevent cold-soaking, the system applies an **Always-On Maintenance Pulse**. This establishes a continuous base duty cycle to keep the slab naturally buoyant, independent of the PID's response to room error.
+
+- **Concrete zones** receive a 20% base duty (e.g., 18 min ON / 72 min OFF), sufficient to keep the core slab temperature warm without overheating the room space.
+- **Gypcrete zones** receive 0–10% base duty depending on size and exposure, as their lower thermal mass responds quickly and doesn't require as much constant baseline loading.
+
+The maintenance pulse is scaled per zone via `fMaintenanceFactor`, fully decoupled from pre-charge behaviors. To ensure safety and efficiency, the pulse is inherently gated by physical constraints:
+1. **Thermostat Cutoff (The +2°F Guard):** If the physical room temperature exceeds Setpoint + 2°F, the physical thermostat itself disables and the PLC immediately drops duty to 0%, ensuring no phantom heat is generated. This is critical during shoulder seasons: if the house setpoint is 68°F and midday solar radiation pushes the room to 69.5°F, the 20% maintenance pulse *continues to fire*, keeping the core slab from dropping despite the warm air. Because the system utilizes a gentle ODR curve (e.g., 80°F supply water at 65°F outdoor), this pulse acts purely as buoyancy — it lacks the thermal driving force to actually increase the floor temperature and overheat the room. But if the room hits 70.1°F (+2°F limit), the thermostat physically cuts the call-for-heat, hard-stopping the pulse to prevent uncomfortable overheating from compounded loads.
+2. **PWM Synchronization:** To ensure these maintenance pulses clear the governor's 5,000 BTU/hr minimum start threshold, all free-running PWM timers are synchronized to $T=0$ upon system restart, locking all zones into a unified firing phase.
+
+### 7. Slow PWM — Valve Timing
 
 PID output (0–100% duty) is converted to valve ON/OFF timing using a slow PWM with configurable period:
 
@@ -435,7 +448,7 @@ PID output (0–100% duty) is converted to valve ON/OFF timing using a slow PWM 
 - **Gap bridging**: If the calculated OFF-time is less than 5 minutes, the valve stays on for the entire period — a 5-minute off period isn't worth the valve actuator wear.
 - **Safety catch**: If the valve was latched OFF but demand rises above 10% within the first 5 minutes of the cycle, the PWM recalculates. This prevents a full 90-minute wait when demand suddenly increases.
 
-### 7. Zone Invariant — Physical Safety Layer
+### 8. Zone Invariant — Physical Safety Layer
 
 Each zone has a state machine that sits between the PWM output and the actual valve command. It enforces hard timing constraints:
 
@@ -458,7 +471,7 @@ Each zone has a state machine that sits between the PWM output and the actual va
 
 **Governor gating**: New heating starts (IDLE → HEATING) are blocked when the governor is not in ACTIVE state or when structural load is insufficient. Zones already in HEATING are NOT ejected by the governor — mid-heating ejection caused rapid cycling in testing.
 
-### 8. Zone Manager — Load Aggregation
+### 9. Zone Manager — Load Aggregation
 
 The Zone Manager runs every scan and computes three aggregate load metrics from all 13 zones:
 
@@ -476,7 +489,7 @@ Demand BTU wakes the boiler regardless of current water temperature (cold-start 
 
 **Energy counters**: One `FB_EnergyCounter` instance per zone tracks daily runtime (seconds) and daily BTU consumed, resettable via Modbus trigger from Node-RED (midnight reset). Active energy is counted only when the zone's valve is physically open (state-based, not duty-based).
 
-### 9. Heating Governor — Boiler Plant Management
+### 10. Heating Governor — Boiler Plant Management
 
 The governor is a **3-state machine** controlling the boiler:
 
@@ -507,7 +520,7 @@ The governor is a **3-state machine** controlling the boiler:
 
 **Insufficient Load gate**: During IDLE, if the total rated demand of requesting zones is below 3,000 BTU (e.g., only a small bathroom is calling), zones are locked out until enough aggregate demand accumulates. This prevents the boiler from firing for trivially small loads. The gate uses rated (not duty-weighted) demand to avoid circular deadlock where low duty prevents boiler start, which prevents valve opening, which prevents load accumulation.
 
-### 10. Forced Air — Shuttling, Filtration, and Humidity Control
+### 11. Forced Air — Shuttling, Filtration, and Humidity Control
 
 Five air handlers serve dual purposes: **temperature equalization** (shuttling heat between zones), **humidity equalization** (shuttling moisture), and **baseline air filtration** (maintaining air quality). Each handler has its own controller (`FB_AirHandler`) managed by a coordinator (`FB_AirMarshal`).
 
@@ -553,7 +566,7 @@ The fan controller tracks idle time and automatically triggers a Circulation run
 #### Guest Suite Occupancy Logic
 The Guest Suite fan (Group 3) is **disabled when the guest zone or living room shows occupancy or motion**. This prevents fan noise from disturbing guests — the system prioritizes quiet over equalization when someone is present in those spaces.
 
-### 11. Persistence and Startup
+### 12. Persistence and Startup
 
 **Setpoints and thermostat modes** are stored in `RETAIN PERSISTENT` memory across PLC reboots.
 
